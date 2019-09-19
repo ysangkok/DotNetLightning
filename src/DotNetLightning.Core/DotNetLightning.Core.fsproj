@@ -21,6 +21,10 @@
     <Compile Include="Utils/Errors.fs" />
     <Compile Include="Utils/Logger.fs" />
     <Compile Include="Utils/RouteType.fs" />
+    <Compile Include="FGL/Graph.fs" />
+    <Compile Include="FGL/Models.fs" />
+    <Compile Include="FGL/Undirected.fs" />
+    <Compile Include="FGL/Directed.fs" />
     <Compile Include="Serialize/LightningStream.fs" />
     <Compile Include="Serialize/Msgs.fs" />
     <Compile Include="DomainUtils/Types.fs" />
