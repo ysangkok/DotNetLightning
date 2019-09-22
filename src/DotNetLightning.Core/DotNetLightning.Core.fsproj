@@ -50,6 +50,7 @@
     <Compile Include="LN/Channel.fs" />
     <Compile Include="LN/PeerTypes.fs" />
     <Compile Include="LN/Peer.fs" />
+    <Compile Include="Routing\Graph.fs" />
     <Compile Include="Routing/Router.fs" />
   </ItemGroup>
   <ItemGroup>

@@ -26,6 +26,7 @@
     <Compile Include="KeyRepositories.fs" />
     <Compile Include="Socks5.fs" />
     <Compile Include="NodeParams.fs" />
+    <Compile Include="Router.fs" />
     <Compile Include="ChannelActor.fs" />
     <Compile Include="ChannelManager.fs" />
     <Compile Include="PeerActor.fs" />
