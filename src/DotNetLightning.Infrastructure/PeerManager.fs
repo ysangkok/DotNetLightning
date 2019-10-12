@@ -23,12 +23,12 @@ open Microsoft.Extensions.Logging
 open Microsoft.Extensions.Options
 
 type IPeerManager =
-    abstract member ReadAsync: PeerId * IDuplexPipe -> ValueTask
-    abstract member AcceptCommand: cmd: PeerCommandWithContext -> ValueTask
+    abstract member ReadAsync: PeerId * IDuplexPipe -> Task
+    abstract member AcceptCommand: cmd: PeerCommandWithContext -> Task
     abstract member NewOutBoundConnection: theirNodeId: NodeId *
                                            peerId: PeerId *
                                            pipeWriter: PipeWriter *
-                                           ?ie: Key -> ValueTask
+                                           ?ie: Key -> Task
     abstract member OurNodeId: NodeId
 type PeerManager(eventAggregator: IEventAggregator,
                  log: ILogger<PeerManager>,
@@ -67,11 +67,11 @@ type PeerManager(eventAggregator: IEventAggregator,
     member private this.Disconnect(peerId) =
         log.LogInformation(sprintf "disconnecting peer %A" peerId)
         (this.KnownPeers.[peerId] :> IDisposable).Dispose()
-        this.KnownPeers.Remove(peerId) |> ignore
+        (this.KnownPeers :> IDictionary<PeerId, PeerActor>).Remove(peerId) |> ignore
         
     /// event which should not be handled by the peer (e.g. ReceivedRoutingMsg) will be ignored
     member private this.PeerEventListener e =
-        let vt = vtask {
+        let vt = task {
             match e.PeerEvent with
             // --- initialization ---
             | ActTwoProcessed((_, nodeId), _) ->
@@ -79,7 +79,7 @@ type PeerManager(eventAggregator: IEventAggregator,
                 | true -> ()
                 | _ -> failwithf "Duplicate Connection with %A" nodeId
                 let localFeatures = 
-                    let lf = (LocalFeatures.Flags [||])
+                    let lf = (LocalFeatures.Flags [|3uy|])
                     if nodeParamsValue.RequireInitialRoutingSync then
                         lf.SetInitialRoutingSync()
                     else
@@ -143,9 +143,9 @@ type PeerManager(eventAggregator: IEventAggregator,
                         do! (peerActor :> IActor<_>). Put(EncodeMsg { Init.GlobalFeatures = GlobalFeatures.Flags([||]); Init.LocalFeatures = lf })
             | _ -> ()
         }
-        vt.AsTask() |> Async.AwaitTask
+        vt |> Async.AwaitTask
     member private this.ChannelEventListener (contextEvent): Async<unit> =
-        let vt = vtask {
+        let vt = task {
             let nodeId = contextEvent.NodeId
             match this.NodeIdToPeerId.TryGetValue(nodeId) with
             | false, _ -> ()
@@ -229,10 +229,10 @@ type PeerManager(eventAggregator: IEventAggregator,
                 | Disconnected _ -> failwith "TODO"
                 | ChannelStateRequestedSignCommitment _ -> failwith "TODO"
         }
-        vt.AsTask() |> Async.AwaitTask
+        vt |> Async.AwaitTask
         
 
-    member this.NewInboundConnection(theirPeerId: PeerId, actOne: byte[], pipeWriter: PipeWriter, ?ourEphemeral) = vtask {
+    member this.NewInboundConnection(theirPeerId: PeerId, actOne: byte[], pipeWriter: PipeWriter, ?ourEphemeral) = task {
         if (actOne.Length <> 50) then return (UnexpectedByteLength(50, actOne.Length) |> Result.Error) else
         let secret = keyRepo.GetNodeSecret()
         let newPeer = Peer.CreateInbound(theirPeerId, secret)
@@ -267,7 +267,7 @@ type PeerManager(eventAggregator: IEventAggregator,
                                        peerId: PeerId,
                                        pipeWriter: PipeWriter,
                                        ?ie: Key) =
-        unitVtask {
+        unitTask {
             let newPeer = Peer.CreateOutbound(peerId, theirNodeId)
             let act1, peerEncryptor =
                 newPeer
@@ -296,8 +296,8 @@ type PeerManager(eventAggregator: IEventAggregator,
         this.ReadAsync(peerId, pipe, Key())
         
         
-    member this.ReadAsync(peerId: PeerId, pipe: IDuplexPipe, ourEphemeral): ValueTask =
-        unitVtask {
+    member this.ReadAsync(peerId: PeerId, pipe: IDuplexPipe, ourEphemeral): Task =
+        unitTask {
             match this.KnownPeers.TryGetValue(peerId) with
             | false, _ ->
                 sprintf "Going to create new inbound peer against %A" (peerId)
@@ -317,7 +317,7 @@ type PeerManager(eventAggregator: IEventAggregator,
                 do! (this.KnownPeers.[peerId] :> IActor<_>).PutAndWaitProcess(DecodeCipherPacket (l, reader))
             | _ -> return failwith "unreachable"
         }
-    member this.AcceptCommand(cmd: PeerCommandWithContext) = unitVtask {
+    member this.AcceptCommand(cmd: PeerCommandWithContext) = unitTask {
         match this.KnownPeers.TryGetValue(cmd.PeerId) with
         | true, peerActor ->
             do! (peerActor :> IActor<_>).Put(cmd.PeerCommand)

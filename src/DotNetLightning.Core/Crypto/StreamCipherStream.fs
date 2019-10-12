@@ -6,7 +6,7 @@ open NSec.Cryptography
 type StreamCipherStream(inner: Stream) =
     inherit System.IO.Stream()
     let _inner = inner
-    let _streamcipehr = ChaCha20()
+    //let _streamcipehr = ChaCha20()
 
     override this.CanSeek = _inner.CanSeek
     override this.CanRead = _inner.CanRead

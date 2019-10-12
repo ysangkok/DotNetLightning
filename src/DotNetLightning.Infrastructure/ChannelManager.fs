@@ -20,7 +20,7 @@ open FSharp.Control.Tasks
 open FSharp.Control.Reactive
 
 type IChannelManager =
-    abstract AcceptCommandAsync: ChannelCommandWithContext -> ValueTask
+    abstract AcceptCommandAsync: ChannelCommandWithContext -> Task
     abstract KeysRepository : IKeysRepository with get
     
 
@@ -159,7 +159,7 @@ type ChannelManager(log: ILogger<ChannelActor>,
         
         
     member private this.ChannelEventHandler (e: ChannelEventWithContext) =
-        let vt = unitVtask {
+        let vt = unitTask {
             match e.ChannelEvent with
             | ChannelEvent.WeAcceptedAcceptChannel (nextMsg, _) ->
                 this.FundingTxs.TryAdd(nextMsg.FundingTxId, (e.NodeId, None)) |> ignore
@@ -167,7 +167,7 @@ type ChannelManager(log: ILogger<ChannelActor>,
                 do! (this.Actors.[e.NodeId] :> IActor<_>).Put(ChannelCommand.ApplyFundingLocked theirFundingSigned)
             | _ -> ()
         }
-        vt.AsTask() |> Async.AwaitTask
+        vt |> Async.AwaitTask
         
     member this.PeerEventListener e =
         let t = unitTask {
@@ -227,7 +227,7 @@ type ChannelManager(log: ILogger<ChannelActor>,
         }
         t |> Async.AwaitTask
     
-    member this.AcceptCommandAsync cmdWithContext = unitVtask {
+    member this.AcceptCommandAsync cmdWithContext = unitTask {
             match cmdWithContext with
             | { ChannelCommand = ChannelCommand.CreateInbound(_) as cmd; NodeId = nodeId } ->
                 let a = createChannel nodeId

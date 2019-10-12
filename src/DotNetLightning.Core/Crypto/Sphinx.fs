@@ -40,7 +40,7 @@ module internal Sphinx =
 
     let zeros (l) = Array.zeroCreate l
 
-    let generateStream (key, l) =
+    let generateStream (key, l) : byte[] =
         CryptoUtils.encryptWithoutAD(0UL, key, ReadOnlySpan(Array.zeroCreate l))
 
     let computeSharedSecret = CryptoUtils.SharedSecret.FromKeyPair

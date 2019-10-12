@@ -16,7 +16,6 @@ module internal CryptoUtils =
         NSec.Cryptography.Nonce(nonceBytes, 0)
 
     let chacha20AD = NSec.Cryptography.ChaCha20Poly1305.ChaCha20Poly1305
-    let chacha20 = NSec.Cryptography.ChaCha20.ChaCha20
 
     let internal decryptWithAD(n: uint64, key: uint256, ad: byte[], cipherText: ReadOnlySpan<byte>): RResult<byte[]> =
         let nonce = getNonce n
@@ -30,12 +29,7 @@ module internal CryptoUtils =
 
     /// This is used for filler generation in onion routing (BOLT 4)
     let internal encryptWithoutAD(n: uint64, key: byte[], plainText: ReadOnlySpan<byte>) =
-        let nonce = getNonce n
-        let keySpan = ReadOnlySpan(key)
-        let blobF = NSec.Cryptography.KeyBlobFormat.RawSymmetricKey
-        use chachaKey = NSec.Cryptography.Key.Import(chacha20, keySpan, blobF)
-        let res = chacha20.XOr(chachaKey, &nonce, plainText)
-        res
+        failwith "not implemented"
 
     let internal encryptWithAD(n: uint64, key: uint256, ad: ReadOnlySpan<byte>, plainText: ReadOnlySpan<byte>) =
         let nonce = getNonce n

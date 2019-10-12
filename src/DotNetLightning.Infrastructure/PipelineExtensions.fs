@@ -14,7 +14,7 @@ type PipeReaderExtensions() =
     [<Extension>]
     static member ReadExactAsync(this: PipeReader, length: int, ?advance: bool) =
         let advance = defaultArg advance true
-        vtask {
+        task {
             let! result = this.ReadAsync()
             let buf = result.Buffer
             let res = buf.Slice(0, length).ToArray()
@@ -29,7 +29,7 @@ type PipeWriterExtensions() =
 
     [<Extension>]
     static member WriteAsync(this: PipeWriter, data: byte[]) =
-        unitVtask {
+        unitTask {
             let! r = this.WriteAsync(ReadOnlyMemory(data))
             return ()
         }

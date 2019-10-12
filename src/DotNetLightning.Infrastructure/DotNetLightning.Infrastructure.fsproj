@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.0</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>DotnetLightning.Infrastructure</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -38,5 +38,6 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="3.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="3.0.0" />
     <PackageReference Include="System.IO.Pipelines" Version="4.5.3" />
+    <PackageReference Include="System.Threading.Channels" Version="4.6.0" />
   </ItemGroup>
 </Project>

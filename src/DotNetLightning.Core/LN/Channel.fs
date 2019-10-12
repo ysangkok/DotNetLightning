@@ -533,8 +533,11 @@ module Channel =
 
         // --------------- open channel procedure: case we are funder -------------
         | WaitForInitInternal, CreateOutbound inputInitFunder ->
+            let revGenesis = cs.Network.Consensus.HashGenesisBlock.ToBytes()
+            Array.Reverse revGenesis
+            let revGenesisUint = uint256 revGenesis
             let openChannelMsgToSend = {
-                OpenChannel.Chainhash = cs.Network.Consensus.HashGenesisBlock
+                OpenChannel.Chainhash = revGenesisUint
                 TemporaryChannelId = inputInitFunder.TemporaryChannelId
                 FundingSatoshis = inputInitFunder.FundingSatoshis
                 PushMSat = inputInitFunder.PushMSat

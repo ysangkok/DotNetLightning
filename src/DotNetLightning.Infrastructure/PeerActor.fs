@@ -43,7 +43,7 @@ type PeerActor(peer: Peer,
     override this.HandleError (b: RBad) =
         unitTask {
             let handleObj (o: obj) = 
-                unitVtask {
+                unitTask {
                     match o with
                     | :? HandleError as he ->
                         sprintf "Got Error when handling message"
