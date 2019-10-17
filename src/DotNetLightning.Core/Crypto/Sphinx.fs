@@ -10,6 +10,8 @@ type SharedSecret = uint256
 module internal Sphinx =
     open NBitcoin.Crypto
 
+    let crypto = Sodium.impl
+
     [<Literal>]
     let VERSION = 0uy
 
@@ -41,9 +43,9 @@ module internal Sphinx =
     let zeros (l) = Array.zeroCreate l
 
     let generateStream (key, l) : byte[] =
-        CryptoUtils.encryptWithoutAD(0UL, key, ReadOnlySpan(Array.zeroCreate l))
+        crypto.encryptWithoutAD(0UL, key, ReadOnlySpan(Array.zeroCreate l))
 
-    let computeSharedSecret = CryptoUtils.SharedSecret.FromKeyPair
+    let computeSharedSecret = SharedSecret.FromKeyPair
 
     let computeBlindingFactor(pk: PubKey) (secret: Key) =
         [| pk.ToBytes(); secret.ToBytes() |]

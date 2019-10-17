@@ -9,7 +9,6 @@ open DotNetLightning.Utils.Aether
 open DotNetLightning.Utils.Aether.Operators
 open DotNetLightning.Serialize.Msgs
 open DotNetLightning.Crypto
-open DotNetLightning.Crypto.CryptoUtils
 open System
 open System.Diagnostics
 
@@ -18,6 +17,8 @@ open System.Runtime.CompilerServices
 
 [<AutoOpen>]
 module PeerChannelEncryptor =
+    let crypto = Sodium.impl
+
     type BitConverter with
         static member GetBytesBE(data: uint16) =
             let buf = Array.zeroCreate 2
@@ -307,7 +308,7 @@ module PeerChannelEncryptor =
                     }
             }
         let internal decryptWithAD(n: uint64, key: uint256, ad: byte[], cipherText: ReadOnlySpan<byte>): RResult<byte[]> =
-            CryptoUtils.decryptWithAD(n, key, ad, cipherText)
+            crypto.decryptWithAD(n, key, ad, cipherText)
             >>>= fun e ->
                 RResult.rbad(RBad.Object({ HandleError.Error = "Bad MAC"; Action = Some(DisconnectPeer(None))} ))
 
@@ -335,7 +336,7 @@ module PeerChannelEncryptor =
 
             let c =
                 let h = Optic.get (PeerChannelEncryptor.H_) s3
-                encryptWithAD (0UL, tempK, ReadOnlySpan(h.Value.ToBytes()), ReadOnlySpan([||]))
+                crypto.encryptWithAD (0UL, tempK, ReadOnlySpan(h.Value.ToBytes()), ReadOnlySpan([||]))
             let resultToSend = Array.concat (seq [ [|0uy|]; ourPub.ToBytes(); c ])
             let newState = updateHWith s3 c
             (resultToSend, tempK), newState
@@ -416,7 +417,7 @@ module PeerChannelEncryptor =
                         let ourNodeId = ourNodeSecret.PubKey
                         let encryptedRes1 =
                             let currentH = Optic.get (PeerChannelEncryptor.H_) pce2
-                            encryptWithAD (1UL, tempK2, ReadOnlySpan(currentH.Value.ToBytes()), ReadOnlySpan(ourNodeId.ToBytes()))
+                            crypto.encryptWithAD (1UL, tempK2, ReadOnlySpan(currentH.Value.ToBytes()), ReadOnlySpan(ourNodeId.ToBytes()))
                         let pce3 = updateHWith pce2 encryptedRes1 
                         let (tempK, pce4) =
                             let ss = SharedSecret.FromKeyPair(re, ourNodeSecret)
@@ -424,7 +425,7 @@ module PeerChannelEncryptor =
 
                         let encryptedRes2 =
                             let currentH = Optic.get (PeerChannelEncryptor.H_) pce4
-                            encryptWithAD (0UL, tempK, ReadOnlySpan(currentH.Value.ToBytes()), ReadOnlySpan([||]))
+                            crypto.encryptWithAD (0UL, tempK, ReadOnlySpan(currentH.Value.ToBytes()), ReadOnlySpan([||]))
 
                         let (sk, rk) =
                             let currentCK = Optic.get (PeerChannelEncryptor.CK_) pce4
@@ -496,10 +497,10 @@ module PeerChannelEncryptor =
             let sk = (Optic.get (PeerChannelEncryptor.SK_) pceLocal).Value
             let lengthBytes = BitConverter.GetBytesBE(uint16 msg.Length)
             // 2 byte length + 16 bytes MAC
-            let cipherLength = encryptWithAD (sn, sk, ReadOnlySpan([||]) , ReadOnlySpan(lengthBytes))
+            let cipherLength = crypto.encryptWithAD (sn, sk, ReadOnlySpan([||]) , ReadOnlySpan(lengthBytes))
             let newSN = (sn + 1UL)
             let pce3 = pceLocal |> Optic.set (PeerChannelEncryptor.SN_) (newSN)
-            let cipherText = encryptWithAD (newSN, sk, ReadOnlySpan[||], ReadOnlySpan(msg))
+            let cipherText = crypto.encryptWithAD (newSN, sk, ReadOnlySpan[||], ReadOnlySpan(msg))
             let pce4 = pce3 |> Optic.set (PeerChannelEncryptor.SN_) (newSN + 1UL)
             Array.concat (seq [ cipherLength; cipherText ]), pce4
 
