@@ -1,12 +1,17 @@
 namespace DotNetLightning.Crypto
 
 open System
+open System.Linq
 open NBitcoin
 open NBitcoin.Crypto
 
 open DotNetLightning.Utils
+open Org.BouncyCastle.Crypto.Engines
+open Org.BouncyCastle.Crypto
+open Org.BouncyCastle.Crypto.Parameters
+open Org.BouncyCastle.Crypto.Macs
 
-module internal CryptoUtils =
+module  CryptoUtils =
     module internal SharedSecret =
         let FromKeyPair(pub: PubKey, priv: Key) =
             Hashes.SHA256 (pub.GetSharedPubkey(priv).ToBytes())
@@ -16,8 +21,16 @@ module internal CryptoUtils =
         NSec.Cryptography.Nonce(nonceBytes, 0)
 
     let chacha20AD = NSec.Cryptography.ChaCha20Poly1305.ChaCha20Poly1305
+    let chacha20 = NSec.Experimental.ChaCha20.ChaCha20
 
-    let internal decryptWithAD(n: uint64, key: uint256, ad: byte[], cipherText: ReadOnlySpan<byte>): RResult<byte[]> =
+    let InitRecord(cipher: IStreamCipher , forEncryption: bool , nonce: byte[] ) =
+        cipher.Init(forEncryption, new ParametersWithIV(null, nonce))
+        let firstBlock = Array.zeroCreate 64;
+        cipher.ProcessBytes(firstBlock, 0, firstBlock.Length, firstBlock, 0)
+        let macKey = KeyParameter(firstBlock, 0, 32);
+        macKey
+
+    let decryptWithAD(n: uint64, key: uint256, ad: byte[], cipherText: ReadOnlySpan<byte>): RResult<byte[]> =
         let nonce = getNonce n
         let keySpan = ReadOnlySpan(key.ToBytes())
         let adSpan = ReadOnlySpan(ad)
@@ -28,12 +41,88 @@ module internal CryptoUtils =
         | false, _ -> RResult.rmsg "Failed to decyrpt with AD. Bad Mac"
 
     /// This is used for filler generation in onion routing (BOLT 4)
-    let internal encryptWithoutAD(n: uint64, key: byte[], plainText: ReadOnlySpan<byte>) =
-        failwith "not implemented"
+    let encryptWithoutAD(n: uint64, key: byte[], plainText: ReadOnlySpan<byte>) =
+        let nonce = getNonce n
+        let keySpan = ReadOnlySpan(key)
+        let blobF = NSec.Cryptography.KeyBlobFormat.RawSymmetricKey
+        use chachaKey = NSec.Cryptography.Key.Import(chacha20, keySpan, blobF)
+        let res = chacha20.XOr(chachaKey, &nonce, plainText)
+        res
 
-    let internal encryptWithAD(n: uint64, key: uint256, ad: ReadOnlySpan<byte>, plainText: ReadOnlySpan<byte>) =
+    let encryptWithAD(n: uint64, key: uint256, ad: ReadOnlySpan<byte>, plainText: ReadOnlySpan<byte>) =
         let nonce = getNonce n
         let keySpan = ReadOnlySpan(key.ToBytes())
         let blobF = NSec.Cryptography.KeyBlobFormat.RawSymmetricKey
         use chachaKey = NSec.Cryptography.Key.Import(chacha20AD, keySpan, blobF)
         chacha20AD.Encrypt(chachaKey, &nonce, ad, plainText)
+
+    type internal Mode = ENCRYPT | DECRYPT
+
+    let internal encryptOrDecrypt(mode: Mode, inp: byte[], key: byte[], nonce: byte[] , skip1block: bool): byte[] =
+        let eng = ChaCha7539Engine()
+        eng.Init((mode = ENCRYPT), ParametersWithIV(KeyParameter key, nonce))
+        let out = Array.zeroCreate inp.Length
+        if skip1block then
+            let dummy = Array.zeroCreate 64
+            eng.ProcessBytes(Array.zeroCreate 64, 0, 64, dummy, 0)
+        else ()
+        eng.ProcessBytes(inp, 0, inp.Length, out, 0)
+        out
+
+    let internal pad(mac: Poly1305, length: int): unit =
+        match length % 16 with
+        | 0 -> ()
+        | n -> 
+            let padding = Array.zeroCreate <| 16 - n
+            mac.BlockUpdate(padding, 0, padding.Length)
+
+    let internal writeLE(mac: Poly1305, length: int): unit =
+        let serialized = BitConverter.GetBytes(uint64 length)
+        if not BitConverter.IsLittleEndian then
+            Array.Reverse serialized
+        else ()
+        mac.BlockUpdate(serialized, 0, 8)
+
+    let internal writeSpan(mac: Poly1305, span: ReadOnlySpan<byte>): unit =
+        let byteArray = span.ToArray()
+        mac.BlockUpdate(byteArray, 0, byteArray.Length)
+
+    let calcMac(key, nonce, ciphertext, ad): byte[] =
+        let mac = Poly1305()
+        let polyKey = encryptOrDecrypt(ENCRYPT, Array.zeroCreate 32, key, nonce, false)
+        mac.Init <| KeyParameter polyKey
+        writeSpan(mac, ad)
+        pad(mac, ad.Length)
+        mac.BlockUpdate(ciphertext, 0, ciphertext.Length)
+        pad(mac, ciphertext.Length)
+        writeLE(mac, ad.Length)
+        writeLE(mac, ciphertext.Length)
+        let tag : byte[] = Array.zeroCreate 16
+        let macreslen = mac.DoFinal(tag, 0)
+        assert (macreslen = 16)
+        tag
+
+    let encryptWithAD2(n: uint64, key: uint256, ad: ReadOnlySpan<byte>, plainText: ReadOnlySpan<byte>) =
+        let key = key.ToBytes()
+        let nonce = Array.concat[| Array.zeroCreate 4; BitConverter.GetBytes(n) |]
+        let plainTextBytes = plainText.ToArray()
+        let ciphertext = encryptOrDecrypt(ENCRYPT, plainTextBytes, key, nonce, true)
+        let tag = calcMac(key, nonce, ciphertext, ad)
+        Array.concat [| ciphertext; tag|]
+        
+    let decryptWithAD2(n: uint64, key: uint256, ad: ReadOnlySpan<byte>, ciphertext: ReadOnlySpan<byte>) =
+        let key = key.ToBytes()
+        let nonce = Array.concat[| Array.zeroCreate 4; BitConverter.GetBytes(n) |]
+        let ciphertextWithoutMac = ciphertext.Slice(0, ciphertext.Length - 16).ToArray()
+        let macToValidate = ciphertext.Slice(ciphertext.Length - 16).ToArray()
+        let correctMac = calcMac(key, nonce, ciphertextWithoutMac, ad)
+        let ciphertextMacIsCorrect = correctMac.SequenceEqual(macToValidate)
+        if not ciphertextMacIsCorrect then
+            raise <| System.ArgumentException "invalid message authentication code at then end of ciphertext"
+        else ()
+        let plaintext = encryptOrDecrypt(DECRYPT, ciphertextWithoutMac, key, nonce, true)
+        plaintext
+
+    let encryptWithoutAD2(n: uint64, key: byte[], plainText: ReadOnlySpan<byte>) =
+        let nonce = Array.concat[| Array.zeroCreate 4; BitConverter.GetBytes(n) |]
+        encryptOrDecrypt(ENCRYPT, plainText.ToArray(), key, nonce, false)
